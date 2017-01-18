@@ -1,11 +1,15 @@
 # JSPatch
-[![Travis](https://img.shields.io/travis/bang590/JSPatch.svg)](https://github.com/bang590/JSPatch)
+[![Travis](https://img.shields.io/travis/bang590/JSPatch.svg)](https://travis-ci.org/bang590/JSPatch)
 ![CocoaPods Version](https://img.shields.io/cocoapods/v/JSPatch.svg?style=flat)
 [![License](https://img.shields.io/github/license/bang590/JSPatch.svg?style=flat)](https://github.com/bang590/JSPatch/blob/master/LICENSE)
 
-JSPatch bridge Objective-C and JavaScript using the Objective-C runtime. You can call any Objective-C class and method in JavaScript by just including a small engine. That makes the APP obtain the power of script language: add modules or replacing Objective-C codes to fix bugs dynamically.
+[中文介绍](https://github.com/bang590/JSPatch/blob/master/README-CN.md) | [文档](https://github.com/bang590/JSPatch/wiki) | [JSPatch平台](http://jspatch.com)
+
+JSPatch bridges Objective-C and JavaScript using the Objective-C runtime. You can call any Objective-C class and method in JavaScript by just including a small engine. That makes the APP obtaining the power of script language: add modules or replacing Objective-C code to fix bugs dynamically.
 
 JSPatch is still in development, welcome to improve the project together.
+
+**Notice**: Please go to [Wiki](https://github.com/bang590/JSPatch/wiki/) to get full document.
 
 ## Example
 
@@ -51,6 +55,7 @@ defineClass('AppDelegate', {
 });
 ```
 
+You can also try to use [JSPatch Convertor](https://github.com/bang590/JSPatchConvertor) to convertor code from Objective-C to JavaScript automatically.
 
 ## Installation
 
@@ -60,8 +65,8 @@ defineClass('AppDelegate', {
 
 ```ruby
 # Your Podfile
-platform :ios, '7.0'
-pod 'JSPatch', '~> 0.0.1'
+platform :ios, '6.0'
+pod 'JSPatch'
 ```
 
 ### Manually
@@ -102,19 +107,10 @@ NSString *script = [NSString stringWithContentsOfFile:sourcePath encoding:NSUTF8
 
 ### JavaScript
 
-#### 1. require 
-
-Call `require('className')` before using the Objective-C class. You can use `,` to separate multiple class to import them at one time. 
+#### Base Usage
 
 ```js
-require('UIView, UIColor')
-var view = UIView.alloc().init()
-var red = UIColor.redColor()
-var ctrl = require('UIViewController').alloc().init()
-```
-
-####2. Invoking method
-```js
+//require
 require('UIView, UIColor, UISlider, NSIndexPath')
 
 // Invoke class method
@@ -130,37 +126,45 @@ view.setBackgroundColor(redColor);
 // get property 
 var bgColor = view.backgroundColor();
 
-// multi-params method
-// OC：NSIndexPath *indexPath = [NSIndexPath indexPathForRow:0 inSection:1]
+// multi-params method (use underline to separate)
+// OC：NSIndexPath *indexPath = [NSIndexPath indexPathForRow:0 inSection:1];
 var indexPath = NSIndexPath.indexPathForRow_inSection(0, 1);
 
-```
+// method name contains underline (use double undeline to represent)
+// OC: [JPObject _privateMethod];
+JPObject.__privateMethod()
 
-####3. defineClass
-You can define a new Objective-C class in JavaScript:
+// use .toJS() to convert NSArray / NSString / NSDictionary to JS type.
+var arr = require('NSMutableArray').alloc().init()
+arr.addObject("JS")
+jsArr = arr.toJS()
+console.log(jsArr.push("Patch").join(''))  //output: JSPatch
 
-```js
-defineClass("JPViewController: UIViewController", {
-  //instance method definitions
-  viewDidLoad: function() {
-    //use self.super to call super method
-    self.super.viewDidLoad()
+// use hashes to represent struct like CGRect / CGSize / CGPoint / NSRange
+var view = UIView.alloc().initWithFrame({x:20, y:20, width:100, height:100});
+var x = view.bounds().x;
 
-    //do something here
-  },
+// wrap function with `block()` when passing block from JS to OC
+// OC Method: + (void)request:(void(^)(NSString *content, BOOL success))callback
+require('JPObject').request(block("NSString *, BOOL", function(ctn, succ) {
+  if (succ) log(ctn)
+}));
 
-  viewDidAppear: function(animated) {
-
-  }
-}, {
-  //class method definitions
-  description: function() {
-    return "I'm JPViewController"
-  } 
+// GCD
+dispatch_after(1.0, function(){
+  // do something
+})
+dispatch_async_main(function(){
+  // do something
 })
 ```
 
-Or you can redefine an exists class and override methods.
+Go to wiki page for more details: [Base Usage](https://github.com/bang590/JSPatch/wiki/Base-usage)
+
+
+
+####defineClass
+You can redefine an existing class and override methods.
 
 ```objc
 // OC
@@ -189,8 +193,8 @@ defineClass("JPTableViewController", {
   // instance method definitions
   tableView_didSelectRowAtIndexPath: function(tableView, indexPath) {
     var row = indexPath.row()
-    if (self.dataSource().length > row) {  //fix the out of bound bug here
-      var content = self.dataSource()[row];
+    if (self.dataSource().count() > row) {  //fix the out of bound bug here
+      var content = self.dataSource().objectAtIndex(row);
       var ctrl = JPViewController.alloc().initWithContent(content);
       self.navigationController().pushViewController(ctrl);
     }
@@ -198,96 +202,56 @@ defineClass("JPTableViewController", {
 
   dataSource: function() {
     // get the original method by adding prefix 'ORIG'
-    var data = self.ORIGdataSource();
+    var data = self.ORIGdataSource().toJS();
     return data.push('Good!');
   }
 }, {})
 ```
 
+Go to wiki page for more details: [Usage of defineClass](https://github.com/bang590/JSPatch/wiki/Usage-of-defineClass)
 
-#### 4. CGRect / CGPoint / CGSize / NSRange
-Use hashes:
+####Extensions
+
+There are some extensions provide support for custom struct type, C methods and other functional, call `+addExtensions:` after starting engine to add extensions:
 
 ```objc
-// OC
-UIView *view = [[UIView alloc] initWithFrame:CGRectMake(20, 20, 100, 100)];
-CGFloat x = view.frame.origin.x;
-```
+@implementation AppDelegate
 
-```js
-// JS
-var view = UIView.alloc().initWithFrame({x:20, y:20, width:100, height:100});
-var x = view.bounds.x;
-```
-
-#### 5. block
-You should indicate each type of params when passing block from js to objc.
-```objc
-// OC
-@implementation JPObject
-+ (void)request:(void(^)(NSString *content, BOOL success))callback
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions 
 {
-  callback(@"I'm content", YES);
+    [JPEngine startEngine];
+
+    //add extensions after startEngine
+    [JPEngine addExtensions:@[@"JPInclude", @"JPCGTransform"]];
+
+    NSString *sourcePath = [[NSBundle mainBundle] pathForResource:@"demo" ofType:@"js"];
+    NSString *script = [NSString stringWithContentsOfFile:sourcePath encoding:NSUTF8StringEncoding error:nil];
+    [JPEngine evaluateScript:script];
 }
+
 @end
 ```
 
 ```js
-// JS
-require('JPObject').request(block("NSString *, BOOL", function(ctn, succ) {
-  if (succ) log(ctn)  //output: I'm content
-}));
+include('test.js')   //include function provide by JPInclude.m
+var view = require('UIView').alloc().init()
+
+//CGAffineTransform is supported in JPCGTransform.m
+view.setTransform({a:1, b:0, c:0, d:1, tx:0, ty:100})
 ```
 
-Just call directly when the block passing from objc to js:
-
-```objc
-// OC
-@implementation JPObject
-typedef void (^JSBlock)(NSDictionary *dict);
-+ (JSBlock)genBlock
-{
-  NSString *ctn = @"JSPatch";
-  JSBlock block = ^(NSDictionary *dict) {
-    NSLog(@"I'm %@, version: %@", ctn, dict[@"v"])
-  };
-  return block;
-}
-@end
-```
+Extensions can be added dynamiclly in JS, which is recommended:
 
 ```js
-// JS
-var blk = require('JPObject').genBlock();
-blk({v: "0.0.1"});  //output: I'm JSPatch, version: 0.0.1
+require('JPEngine').addExtensions(['JPInclude', 'JPCGTransform'])
+
+// `include()` and `CGAffineTransform` is avaliable now.
 ```
 
-####6. dispatch
-Using `dispatch_after()` `dispatch_async_main()` `dispatch_sync_main()` `dispatch_async_global_queue()` to call GCD.
-
-```objc
-// OC
-dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-  // do something
-});
-
-dispatch_async(dispatch_get_main_queue(), ^{
-  // do something
-});
-```
-
-```js
-// JS
-dispatch_after(function(1.0, function(){
-  // do something
-}))
-dispatch_async_main(function(){
-  // do something
-})
-```
+You can create your own extension to support custom struct type and C methods in project, see the wiki page for more details: [Adding new extensions](https://github.com/bang590/JSPatch/wiki/Adding-new-extensions)
 
 
 ## Enviroment
-- iOS 7+
+- iOS 7+, forward compatibility with iOS 6
 - JavaScriptCore.framework
 - Support armv7/armv7s/arm64
